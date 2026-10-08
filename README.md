@@ -23,12 +23,14 @@ Many Bluetooth audio devices (soundbars, speakers, headphones) automatically dis
 ## ✨ Features
 
 - 🔇 **Imperceptible Audio** - Plays white noise at extremely low volume (completely inaudible)
-- ⏱️ **Smart Timing** - Sends keep-alive signals every 55 seconds (before typical 60s timeout)
+- ⏱️ **Configurable Timing** - Choose the wait duration and sound duration from the tray menu
 - 🎯 **System Tray Integration** - Minimalist interface accessible from the taskbar
 - ✅ **Easy Toggle** - Enable/disable with a single click
 - 🚀 **Startup Option** - Configure to launch automatically with Windows
+- 🌍 **Languages** - Follow the Windows UI language or choose English, Chinese, French, Russian, Spanish, or Arabic
+- 💾 **Saved Preferences** - Keep your timing and language preferences across restarts
 - 🛡️ **Single Instance** - Prevents multiple instances from running simultaneously
-- 🪶 **Lightweight** - Minimal resource usage (~25MB RAM)
+- 🪶 **Lightweight** - Tray settings use the existing dependencies, without an additional GUI framework
 
 ## 📥 Download & Installation
 
@@ -51,7 +53,7 @@ That's it! Your Bluetooth device will now stay connected.
 If you want to modify the code or contribute to the project:
 
 **Requirements:**
-- Python 3.7 or higher
+- Python 3.9 or higher (dependency versions must support the chosen Python version)
 - Windows OS
 
 **Installation Steps:**
@@ -89,6 +91,11 @@ Right-click the icon to access:
   - ⚫ Grey icon = Paused
 - **🚀 Launch at Startup** - Register/unregister from Windows startup
 - **❌ Quit** - Exit the application
+- **⚙️ Settings** - Choose the wait duration and sound duration, or restore their defaults
+- **🌍 Language** - Follow the system or select one of the six supported languages
+
+An orange icon and an audio status message indicate a playback failure. SoundKeeper
+rechecks the output format and retries every five seconds until playback succeeds.
 
 ### Compatible Devices
 
@@ -102,14 +109,53 @@ SoundKeeper works with any Bluetooth audio device that has auto-standby/timeout 
 
 ## ⚙️ Configuration
 
-Advanced users can modify settings in `soundkeeper.py`:
+Use the tray menu to change preferences without editing source code or rebuilding:
 
-```python
-SAMPLE_RATE = 44100    # Audio sample rate in Hz
-DURATION = 1.0         # Keep-alive sound duration (seconds)
-INTERVAL = 55          # Interval between signals (seconds)
-AMPLITUDE = 0.0001     # Sound volume (very low = imperceptible)
+| Setting | Options | Default |
+| --- | --- | --- |
+| Wait duration | 30 s, 55 s, 4 min 55 s, 9 min 55 s, 14 min 55 s | 55 s |
+| Sound duration | 0.01 s, 0.1 s, 1 s | 1 s |
+| Language | Follow system, English, Simplified Chinese, French, Russian, Spanish, Arabic | Follow system |
+
+The wait starts **after playback finishes**. With the defaults, playback starts
+approximately every 56 seconds. Changing an audio preference during a wait starts
+a new wait using the selected duration; an in-progress sound finishes normally.
+Resuming from pause plays immediately. Longer waits must remain shorter than your
+device's standby timeout. Very short sounds may not keep every device awake.
+
+Preferences are stored per Windows user in `%APPDATA%\SoundKeeper\config.json`:
+
+```json
+{
+  "version": 1,
+  "wait_seconds": 55,
+  "duration_seconds": 1.0,
+  "language": "auto"
+}
 ```
+
+Language codes are `auto`, `en`, `zh-Hans`, `fr`, `ru`, `es`, and `ar`.
+Follow system checks the Windows preferred UI languages in order and uses the first
+supported language family. Unsupported lists fall back to English; all Chinese
+variants currently use the Simplified Chinese translation. Language changes update
+the menu immediately. Language names are displayed in their own languages.
+
+Missing or invalid preferences use defaults. Settings are saved by atomic file
+replacement; a write failure is reported and changes remain usable for the current
+session. Restore defaults resets only the two timing preferences, preserving the
+language and Windows startup registration. Each launch starts with keep-alive enabled.
+
+The sample rate is selected automatically: validate the current output device's
+default rate for stereo `float32` audio, then try 44100 and 48000 Hz if necessary,
+skipping duplicate candidates. The selected rate is used both to generate the
+samples and to play them. It is cached until the reported device changes or playback
+fails, and is not saved in the config file. Detection does not change Windows audio
+settings or verify a device's standby behavior. Some drivers require an application
+restart after devices are connected or disconnected to refresh their device list.
+
+Noise amplitude remains fixed at `0.0001` in `soundkeeper.py`. There is no manual
+input window or additional GUI dependency. Autostart remains managed by the Windows
+Run registry key rather than the JSON file.
 
 ## 🔧 Building from Source
 
@@ -122,6 +168,9 @@ pip install pyinstaller
 # Build the executable
 pyinstaller --onefile --windowed --icon=icon.ico --name SoundKeeper soundkeeper.py
 
+# Alternatively, use the checked-in portable build specification
+pyinstaller SoundKeeper.spec
+
 # Find your .exe in the dist/ folder
 ```
 
@@ -131,7 +180,9 @@ pyinstaller --onefile --windowed --icon=icon.ico --name SoundKeeper soundkeeper.
 
 - Make sure SoundKeeper is running (check system tray)
 - Verify the feature is enabled (icon should be green)
-- Try reducing `INTERVAL` to 45 seconds in the configuration
+- Select a shorter wait duration in the tray settings
+- If using a very short sound, try restoring the default 1-second duration
+- If the icon is orange, check that an output device is available; restart the app after reconnecting if necessary
 
 ### "SoundKeeper is already running" error
 
@@ -144,10 +195,23 @@ pyinstaller --onefile --windowed --icon=icon.ico --name SoundKeeper soundkeeper.
 - Check Windows notification area settings
 - Make sure the application hasn't crashed (check Task Manager)
 
+## Development checks
+
+Run regression tests from the repository root after installing `requirements.txt`:
+
+```powershell
+python -m unittest discover -s tests -v
+```
+
+Tests use temporary configuration files and mocked audio/registry operations. They
+do not play sound or change your Windows startup registration. Actual Bluetooth
+standby behavior and Arabic menu rendering should also be checked on Windows before
+publishing a release. Build size and memory use depend on dependency and driver versions.
+
 ## 📋 System Requirements
 
 - **OS:** Windows 10/11 (64-bit)
-- **RAM:** ~25MB
+- **RAM:** Depends on the Python, dependency, and audio-driver versions
 - **Storage:** ~30MB
 - **Audio:** Any audio output device
 
