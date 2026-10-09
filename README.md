@@ -117,24 +117,83 @@ Use the tray menu to change preferences without editing source code or rebuildin
 | Sound duration | 0.01 s, 0.1 s, 1 s | 1 s |
 | Language | Follow system, English, Simplified Chinese, French, Russian, Spanish, Arabic | Follow system |
 
+### Source defaults
+
+Advanced users can customize the default configuration in the clearly marked
+source-defaults section near the top of `settings.py` before running from source
+or building an executable:
+
+```python
+DEFAULT_SAMPLE_RATE = "auto"  # Or a supported integer sample rate, e.g. 48000
+DEFAULT_DURATION = 1.0
+DEFAULT_INTERVAL = 55
+DEFAULT_AMPLITUDE = 0.0001
+DEFAULT_LANGUAGE = "auto"
+```
+
+On first launch, these defaults are used to create the JSON configuration. Valid
+existing JSON fields take precedence over source defaults, including after an exe
+upgrade. Missing or invalid fields use the corresponding source default.
+
 The wait starts **after playback finishes**. With the defaults, playback starts
 approximately every 56 seconds. Changing an audio preference during a wait starts
 a new wait using the selected duration; an in-progress sound finishes normally.
 Resuming from pause plays immediately. Longer waits must remain shorter than your
 device's standby timeout. Very short sounds may not keep every device awake.
 
-Preferences are stored per Windows user in `%APPDATA%\SoundKeeper\config.json`:
+### JSON preferences
+
+Preferences are stored per Windows user in `%APPDATA%\SoundKeeper\config.json`.
+Exit the app before editing this file, then restart to apply custom values:
 
 ```json
 {
-  "version": 1,
   "wait_seconds": 55,
   "duration_seconds": 1.0,
+  "amplitude": 0.0001,
+  "sample_rate": "auto",
   "language": "auto"
 }
 ```
 
+JSON timings are not limited to menu presets. For example, `wait_seconds: 45` and
+`duration_seconds: 0.5` are valid. A custom timing value appears as a checked,
+read-only menu entry until a preset is selected. Menu changes preserve amplitude
+and sample-rate preferences. No input window or amplitude/sample-rate menu is added.
+
+| JSON field | Accepted values |
+| --- | --- |
+| `wait_seconds` | Number from 0.1 to 86400 seconds |
+| `duration_seconds` | Number from 0.001 to 10 seconds |
+| `amplitude` | Number from 0 to 1; larger values may be audible |
+| `sample_rate` | `"auto"`, or an integer from 8000 to 192000 Hz supported by the output device |
+
+These ranges bound audio allocations and reject invalid numbers. They do not
+guarantee that every combination keeps a particular device awake. Source defaults
+should also use values within these ranges. Legacy `version` fields are ignored
+and omitted when the config is next saved.
+
+For a fixed 48000 Hz rate and French menus, change these JSON fields:
+
+```json
+{
+  "sample_rate": 48000,
+  "language": "fr"
+}
+```
+
+This is a partial example: other fields may be retained in your existing config.
+Use an unquoted integer for a fixed rate (`48000`, not `"48000"` or `48000.0`).
+Use the quoted string `"auto"` for automatic selection. Invalid values fall back to
+source defaults; a valid fixed rate that the device does not support produces an
+audio error. In `settings.py`, the equivalent assignments are
+`DEFAULT_SAMPLE_RATE = 48000` and `DEFAULT_LANGUAGE = "fr"`.
+JSON does not allow comments; do not add `#` or `//` annotations to the config file.
+
 Language codes are `auto`, `en`, `zh-Hans`, `fr`, `ru`, `es`, and `ar`.
+They mean Follow system, English, Simplified Chinese, French, Russian, Spanish,
+and Arabic, respectively. Language codes must remain quoted strings in both JSON
+and Python.
 Follow system checks the Windows preferred UI languages in order and uses the first
 supported language family. Unsupported lists fall back to English; all Chinese
 variants currently use the Simplified Chinese translation. Language changes update
@@ -142,18 +201,21 @@ the menu immediately. Language names are displayed in their own languages.
 
 Missing or invalid preferences use defaults. Settings are saved by atomic file
 replacement; a write failure is reported and changes remain usable for the current
-session. Restore defaults resets only the two timing preferences, preserving the
-language and Windows startup registration. Each launch starts with keep-alive enabled.
+session. Restore defaults resets only the two timing preferences to the defaults
+bundled with the executable, preserving language, amplitude, sample-rate selection,
+and Windows startup registration. Each launch starts with keep-alive enabled.
 
-The sample rate is selected automatically: validate the current output device's
+With `sample_rate: "auto"`, validate the current output device's
 default rate for stereo `float32` audio, then try 44100 and 48000 Hz if necessary,
 skipping duplicate candidates. The selected rate is used both to generate the
 samples and to play them. It is cached until the reported device changes or playback
-fails, and is not saved in the config file. Detection does not change Windows audio
+fails. Only the requested `"auto"` or fixed rate is saved, not the detected rate.
+A fixed rate is checked and used as specified; if unsupported, the app reports an
+audio error rather than silently selecting another rate. Detection does not change Windows audio
 settings or verify a device's standby behavior. Some drivers require an application
 restart after devices are connected or disconnected to refresh their device list.
 
-Noise amplitude remains fixed at `0.0001` in `soundkeeper.py`. There is no manual
+Noise amplitude defaults to `0.0001`. There is no manual
 input window or additional GUI dependency. Autostart remains managed by the Windows
 Run registry key rather than the JSON file.
 

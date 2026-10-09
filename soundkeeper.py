@@ -28,7 +28,6 @@ from settings import (
 from translations import preferred_ui_languages, resolve_language, translate
 
 APP_NAME = "SoundKeeper"
-AMPLITUDE = 0.0001
 STARTUP_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 
 
@@ -88,7 +87,7 @@ class AudioOutput:
         self.device_key = None
         self.samplerate = None
 
-    def select_format(self):
+    def select_format(self, sample_rate="auto"):
         device = sd.query_devices(kind="output")
         key = (
             device["index"],
@@ -96,10 +95,15 @@ class AudioOutput:
             device["hostapi"],
             device["default_samplerate"],
             device["max_output_channels"],
+            sample_rate,
         )
         if key == self.device_key:
             return device["index"], self.samplerate
-        rates = dict.fromkeys((device["default_samplerate"], 44100, 48000))
+        rates = (
+            dict.fromkeys((device["default_samplerate"], 44100, 48000))
+            if sample_rate == "auto"
+            else (sample_rate,)
+        )
         for rate in rates:
             if not np.isfinite(rate) or rate <= 0:
                 continue
@@ -115,11 +119,11 @@ class AudioOutput:
         self.invalidate()
         raise sd.PortAudioError("No supported stereo output sample rate")
 
-    def play(self, duration):
+    def play(self, duration, amplitude, sample_rate):
         try:
-            device, rate = self.select_format()
+            device, rate = self.select_format(sample_rate)
             noise = np.random.uniform(
-                -AMPLITUDE, AMPLITUDE, (max(1, int(rate * duration)), 2)
+                -amplitude, amplitude, (max(1, int(rate * duration)), 2)
             ).astype(np.float32)
             sd.play(noise, rate, device=device)
             sd.wait()
@@ -150,7 +154,7 @@ class SoundKeeper:
         if seconds < 60:
             return self.text("seconds", value=f"{seconds:g}")
         minutes, remainder = divmod(seconds, 60)
-        return self.text("minutes", minutes=minutes, seconds=remainder)
+        return self.text("minutes", minutes=int(minutes), seconds=f"{remainder:g}")
 
     def refresh_icon(self):
         with self.lock:
@@ -201,7 +205,15 @@ class SoundKeeper:
                     radio=True,
                 )
                 for value in values
-            )
+            ),
+            item(
+                lambda menu_item: self.duration_text(getattr(self.settings, name)),
+                None,
+                checked=lambda menu_item: True,
+                radio=True,
+                enabled=False,
+                visible=lambda menu_item: getattr(self.settings, name) not in values,
+            ),
         )
 
     def create_menu(self):
@@ -293,7 +305,9 @@ class SoundKeeper:
                 self.wake.wait()
                 continue
             try:
-                self.output.play(settings.duration_seconds)
+                self.output.play(
+                    settings.duration_seconds, settings.amplitude, settings.sample_rate
+                )
                 self.set_audio_error(False)
             except Exception:
                 self.set_audio_error(True)

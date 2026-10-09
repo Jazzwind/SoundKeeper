@@ -23,6 +23,7 @@ class SettingsTests(unittest.TestCase):
         settings = Settings(wait_seconds=895, duration_seconds=0.01, language="ar")
         save_settings(self.path, settings)
         self.assertEqual(load_settings(self.path), settings)
+        self.assertNotIn("version", json.loads(self.path.read_text(encoding="utf-8")))
         self.assertEqual(list(self.path.parent.iterdir()), [self.path])
 
     def test_missing_corrupt_and_non_object_files_use_defaults(self):
@@ -50,6 +51,68 @@ class SettingsTests(unittest.TestCase):
                 save_settings(self.path, Settings(wait_seconds=30))
         self.assertEqual(load_settings(self.path), Settings())
         self.assertEqual(list(self.path.parent.iterdir()), [self.path])
+
+    def test_custom_values_and_legacy_version_are_loaded(self):
+        self.path.parent.mkdir()
+        self.path.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "wait_seconds": 45.5,
+                    "duration_seconds": 0.5,
+                    "amplitude": 0.0002,
+                    "sample_rate": 48000,
+                    "language": "fr",
+                }
+            ),
+            encoding="utf-8",
+        )
+        self.assertEqual(
+            load_settings(self.path),
+            Settings(
+                wait_seconds=45.5,
+                duration_seconds=0.5,
+                amplitude=0.0002,
+                sample_rate=48000,
+                language="fr",
+            ),
+        )
+
+    def test_invalid_advanced_values_use_source_defaults(self):
+        self.path.parent.mkdir()
+        for value in (True, -1, float("nan"), float("inf"), 10**400, "bad", None):
+            with self.subTest(value=str(value)):
+                self.path.write_text(
+                    json.dumps(
+                        {
+                            "wait_seconds": value,
+                            "duration_seconds": value,
+                            "amplitude": value,
+                            "sample_rate": value,
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+                self.assertEqual(load_settings(self.path), Settings())
+
+    def test_source_defaults_fill_only_missing_or_invalid_fields(self):
+        self.path.parent.mkdir()
+        self.path.write_text(
+            '{"wait_seconds": 45, "duration_seconds": -1}', encoding="utf-8"
+        )
+        defaults = Settings(
+            wait_seconds=20,
+            duration_seconds=0.2,
+            amplitude=0.0003,
+            sample_rate=48000,
+            language="fr",
+        )
+        with patch(
+            "settings.Settings", side_effect=lambda **kw: replace(defaults, **kw)
+        ):
+            self.assertEqual(
+                load_settings(self.path), replace(defaults, wait_seconds=45)
+            )
 
 
 class LanguageTests(unittest.TestCase):
@@ -128,7 +191,7 @@ class AudioTests(unittest.TestCase):
             side_effect=soundkeeper.sd.PortAudioError("disconnected"),
         ):
             with self.assertRaises(soundkeeper.sd.PortAudioError):
-                self.output.play(0.01)
+                self.output.play(0.01, 0.0001, "auto")
         self.assertIsNone(self.output.device_key)
 
     def test_all_rates_unsupported(self):
@@ -137,14 +200,31 @@ class AudioTests(unittest.TestCase):
             self.output.select_format()
         self.assertIsNone(self.output.samplerate)
 
-    def test_playback_uses_selected_rate_duration_and_fixed_amplitude(self):
+    def test_playback_uses_selected_rate_duration_and_configured_amplitude(self):
         with patch("soundkeeper.sd.play") as play, patch("soundkeeper.sd.wait"):
-            self.output.play(0.01)
+            self.output.play(0.01, 0.0002, "auto")
         noise, rate = play.call_args.args
         self.assertEqual(rate, 96000)
         self.assertEqual(noise.shape, (960, 2))
         self.assertEqual(str(noise.dtype), "float32")
-        self.assertLessEqual(abs(noise).max(), soundkeeper.AMPLITUDE)
+        self.assertLessEqual(abs(noise).max(), 0.0002)
+
+    def test_fixed_rate_overrides_default_and_changes_cached_format(self):
+        self.assertEqual(self.output.select_format(), (2, 96000))
+        self.assertEqual(self.output.select_format(48000), (2, 48000))
+        self.assertEqual(self.output.select_format(48000), (2, 48000))
+        self.assertEqual(self.check.call_count, 2)
+
+    def test_unsupported_fixed_rate_does_not_silently_use_another_rate(self):
+        self.check.side_effect = soundkeeper.sd.PortAudioError("unsupported")
+        with self.assertRaises(soundkeeper.sd.PortAudioError):
+            self.output.select_format(48000)
+        self.check.assert_called_once_with(
+            device=2,
+            channels=2,
+            dtype="float32",
+            samplerate=48000,
+        )
 
 
 class MenuTests(unittest.TestCase):
@@ -160,8 +240,8 @@ class MenuTests(unittest.TestCase):
     def test_menu_options_checked_state_and_language_update(self):
         menu = self.app.icon.menu
         settings = menu.items[2].submenu
-        waits = settings.items[0].submenu.items
-        durations = settings.items[1].submenu.items
+        waits = list(settings.items[0].submenu)
+        durations = list(settings.items[1].submenu)
         languages = menu.items[3].submenu.items
         self.assertEqual(len(waits), 5)
         self.assertEqual(len(durations), 3)
@@ -186,10 +266,36 @@ class MenuTests(unittest.TestCase):
         self.assertEqual(self.app.settings.wait_seconds, 30)
         self.app.icon.notify.assert_called_once()
 
+    def test_custom_timing_display_and_reset_preserve_advanced_preferences(self):
+        self.app.settings = Settings(
+            wait_seconds=45,
+            duration_seconds=0.5,
+            amplitude=0.0002,
+            sample_rate=48000,
+            language="en",
+        )
+        settings_menu = self.app.icon.menu.items[2].submenu
+        waits = list(settings_menu.items[0].submenu)
+        self.assertEqual(waits[-1].text, "45 s")
+        self.assertTrue(waits[-1].checked)
+        self.assertFalse(waits[-1].enabled)
+        waits[0](self.app.icon)
+        self.assertEqual(load_settings(self.path).amplitude, 0.0002)
+        self.assertEqual(load_settings(self.path).sample_rate, 48000)
+        self.app.reset_settings(self.app.icon, None)
+        self.assertEqual(
+            load_settings(self.path),
+            Settings(
+                amplitude=0.0002,
+                sample_rate=48000,
+                language="en",
+            ),
+        )
+
     def test_quit_interrupts_long_wait(self):
         played = threading.Event()
         self.app.settings = replace(self.app.settings, wait_seconds=895)
-        self.app.output.play = lambda duration: played.set()
+        self.app.output.play = lambda *args: played.set()
         worker = threading.Thread(target=self.app.play_keep_alive_sound, daemon=True)
         worker.start()
         self.assertTrue(played.wait(2))
@@ -201,7 +307,7 @@ class MenuTests(unittest.TestCase):
     def test_paused_worker_resumes_without_waiting_full_interval(self):
         played = threading.Event()
         self.app.audio_active = False
-        self.app.output.play = lambda duration: played.set()
+        self.app.output.play = lambda *args: played.set()
         worker = threading.Thread(target=self.app.play_keep_alive_sound, daemon=True)
         worker.start()
         try:
