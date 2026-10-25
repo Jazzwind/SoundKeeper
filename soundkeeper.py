@@ -31,6 +31,44 @@ APP_NAME = "SoundKeeper"
 STARTUP_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 
 
+def initialize_dpi_awareness():
+    """Configure source runs before any UI; respect an existing host/EXE policy."""
+    try:
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
+    except OSError:
+        return
+
+    try:
+        set_context = user32.SetProcessDpiAwarenessContext
+        set_context.argtypes = (ctypes.c_void_p,)
+        set_context.restype = wintypes.BOOL
+        if set_context(ctypes.c_void_p(-4)):  # PER_MONITOR_AWARE_V2
+            return
+        if ctypes.get_last_error() == 5:  # Already set by manifest or host.
+            return
+    except (AttributeError, OSError):
+        pass
+
+    try:
+        shcore = ctypes.WinDLL("shcore", use_last_error=True)
+        set_awareness = shcore.SetProcessDpiAwareness
+        set_awareness.argtypes = (ctypes.c_int,)
+        set_awareness.restype = ctypes.c_long  # HRESULT
+        result = set_awareness(2)  # PROCESS_PER_MONITOR_DPI_AWARE
+        if result == 0 or result & 0xFFFFFFFF == 0x80070005:
+            return  # Success, or DPI awareness was already configured.
+    except (AttributeError, OSError):
+        pass
+
+    try:
+        set_system_aware = user32.SetProcessDPIAware
+        set_system_aware.argtypes = ()
+        set_system_aware.restype = wintypes.BOOL
+        set_system_aware()
+    except (AttributeError, OSError):
+        pass  # DPI support must not prevent audio keep-alive from starting.
+
+
 def check_single_instance(language):
     """Return a mutex handle, or None when another instance already exists."""
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
@@ -357,6 +395,7 @@ class SoundKeeper:
 
 
 def main():
+    initialize_dpi_awareness()
     path = config_path()
     settings = load_settings(path)
     language = resolve_language(settings.language, preferred_ui_languages())
