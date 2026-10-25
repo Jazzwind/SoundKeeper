@@ -22,6 +22,28 @@ audio. SoundKeeper periodically plays very low-amplitude white noise through the
 default output device. Effectiveness and audibility depend on the device, volume,
 and timing; there is no universal standby timeout or guaranteed keep-alive setting.
 
+## Compared with upstream
+
+The table compares this fork with [upstream commit `7c1fde4`](https://github.com/Deimz/SoundKeeper/tree/7c1fde480cac87edae8d88cc1ba674d4e1868585),
+the version this fork started from. It does not imply that later upstream versions
+will lack these improvements.
+
+| Area | Upstream baseline | This fork |
+| --- | --- | --- |
+| Interface languages | No language selector or system-language matching | Follow Windows UI preferences or choose English, Simplified Chinese, French, Russian, Spanish, or Arabic |
+| Timing controls | Edit constants in Python source | Five wait presets, three sound-duration presets, timing reset, and custom JSON values |
+| Persistent preferences | No separate preference file | Save and restore preferences in the current user's `config.json` |
+| Advanced configuration | Edit four constants in `soundkeeper.py` | Centralized source defaults plus validated JSON overrides for timing, amplitude, sample rate, and language |
+| Sample rate | Fixed source constant | Validate the device default with 44100/48000 Hz fallbacks, or validate a manually specified rate |
+| Playback failures | Exceptions are silently ignored | Orange tray icon, error status, and retries every five seconds |
+| High-DPI menus | No explicit DPI initialization or packaged DPI declaration | Per-Monitor V2 manifest and early source initialization with older-system fallbacks |
+| Documentation | English README | English-first bilingual homepage and standalone English/Chinese guides |
+
+Quiet periodic playback, native Windows tray menus, activation/pause, startup
+registration, and single-instance protection come from the original project.
+The default sound duration (1 second), wait (55 seconds after playback), and
+amplitude (0.0001) are preserved. Device compatibility still requires testing.
+
 ## ✨ Features
 
 - 🔇 **Imperceptible Audio** - Plays white noise at a very low default amplitude

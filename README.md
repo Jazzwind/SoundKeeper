@@ -29,6 +29,28 @@ audio. SoundKeeper periodically plays very low-amplitude white noise through the
 default output device. Effectiveness and audibility depend on the device, volume,
 and timing; there is no universal standby timeout or guaranteed keep-alive setting.
 
+## Compared with upstream
+
+The table compares this fork with [upstream commit `7c1fde4`](https://github.com/Deimz/SoundKeeper/tree/7c1fde480cac87edae8d88cc1ba674d4e1868585),
+the version this fork started from. It does not imply that later upstream versions
+will lack these improvements.
+
+| Area | Upstream baseline | This fork |
+| --- | --- | --- |
+| Interface languages | No language selector or system-language matching | Follow Windows UI preferences or choose English, Simplified Chinese, French, Russian, Spanish, or Arabic |
+| Timing controls | Edit constants in Python source | Five wait presets, three sound-duration presets, timing reset, and custom JSON values |
+| Persistent preferences | No separate preference file | Save and restore preferences in the current user's `config.json` |
+| Advanced configuration | Edit four constants in `soundkeeper.py` | Centralized source defaults plus validated JSON overrides for timing, amplitude, sample rate, and language |
+| Sample rate | Fixed source constant | Validate the device default with 44100/48000 Hz fallbacks, or validate a manually specified rate |
+| Playback failures | Exceptions are silently ignored | Orange tray icon, error status, and retries every five seconds |
+| High-DPI menus | No explicit DPI initialization or packaged DPI declaration | Per-Monitor V2 manifest and early source initialization with older-system fallbacks |
+| Documentation | English README | English-first bilingual homepage and standalone English/Chinese guides |
+
+Quiet periodic playback, native Windows tray menus, activation/pause, startup
+registration, and single-instance protection come from the original project.
+The default sound duration (1 second), wait (55 seconds after playback), and
+amplitude (0.0001) are preserved. Device compatibility still requires testing.
+
 ## ✨ Features
 
 - 🔇 **Imperceptible Audio** - Plays white noise at a very low default amplitude
@@ -375,6 +397,23 @@ Made with ❤️ for frustrated Bluetooth users everywhere
 一些回音壁、蓝牙音箱和耳机会在长时间没有音频时进入待机。SoundKeeper 通过默认音频输出设备定期播放低振幅白噪声，尝试重置设备的待机计时。
 
 是否有效、是否能听到声音取决于设备、系统音量和参数，没有适用于所有设备的固定待机时间或保活设置。蓝牙仍显示已连接也不一定代表设备没有待机。
+
+## 相比上游新增什么
+
+下表以本 Fork 起点的 [上游提交 `7c1fde4`](https://github.com/Deimz/SoundKeeper/tree/7c1fde480cac87edae8d88cc1ba674d4e1868585) 为对照，不表示上游后续版本一定没有这些改进。
+
+| 项目 | 上游基准版本 | 本 Fork |
+| --- | --- | --- |
+| 界面语言 | 没有语言选择或系统语言匹配机制 | 跟随 Windows 界面语言，或选择英文、简体中文、法语、俄语、西班牙语、阿拉伯语 |
+| 时间设置 | 修改 Python 源码中的常量 | 五种等待预设、三种播放时长预设、恢复时间默认值，以及 JSON 自定义数值 |
+| 偏好保存 | 没有独立偏好文件 | 自动保存并恢复当前用户的 `config.json` |
+| 高级配置 | 修改 `soundkeeper.py` 中的四个常量 | 集中放置源码默认值，支持带校验的 JSON 覆盖时间、振幅、采样率和语言 |
+| 采样率 | 使用源码中的固定值 | 检查设备默认采样率，必要时尝试 44100/48000 Hz，也可检查并使用手动指定值 |
+| 播放失败 | 静默忽略异常 | 橙色托盘图标、错误状态文字，每 5 秒重试 |
+| 高 DPI 菜单 | 没有显式 DPI 初始化或打包 DPI 声明 | PMv2 清单、源码早期初始化，以及旧系统回退 |
+| 使用说明 | 英文 README | 默认英文、可切换中文的首页，以及独立中英文说明 |
+
+低音量定期播放、Windows 原生托盘菜单、启用与暂停、开机启动和单实例保护来自原始项目，并不是本 Fork 新增的功能。默认播放 1 秒、播放后等待 55 秒、振幅 0.0001 保持原值；实际设备兼容性仍需验证。
 
 ## 功能
 
